@@ -1,0 +1,62 @@
+options:no_meter
+
+slider1:0<0,1,1{Off,On}>rect+
+slider2:0<0,1,1{Off,On}>rect-
+slider3:0<0,1,1{Off,On}>rectF+
+slider4:0<0,1,1{Off,On}>rectF-
+
+@slider
+slider1 = slider1 >= 0.5 ? 1 : 0;
+slider2 = slider2 >= 0.5 ? 1 : 0;
+slider3 = slider3 >= 0.5 ? 1 : 0;
+slider4 = slider4 >= 0.5 ? 1 : 0;
+
+slider1 && !prev1 ? (
+  slider2 = 0;
+  slider3 = 0;
+  slider4 = 0;
+);
+
+slider2 && !prev2 ? (
+  slider1 = 0;
+  slider3 = 0;
+  slider4 = 0;
+);
+
+slider3 && !prev3 ? (
+  slider1 = 0;
+  slider2 = 0;
+  slider4 = 0;
+);
+
+slider4 && !prev4 ? (
+  slider1 = 0;
+  slider2 = 0;
+  slider3 = 0;
+);
+
+prev1 = slider1;
+prev2 = slider2;
+prev3 = slider3;
+prev4 = slider4;
+
+@sample
+L = spl0;
+R = spl1;
+
+slider1 ? (
+  L = max(L, 0);
+  R = max(R, 0);
+) : slider2 ? (
+  L = min(L, 0);
+  R = min(R, 0);
+) : slider3 ? (
+  L = abs(L);
+  R = abs(R);
+) : slider4 ? (
+  L = -abs(L);
+  R = -abs(R);
+);
+
+spl0 = L;
+spl1 = R;

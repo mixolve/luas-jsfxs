@@ -1,0 +1,260 @@
+options:no_meter
+slider1:2<0,5,1{1k,2k,4k,8k,16k,32k}>FFT size
+slider2:0<0,4,1{/2,/4,/8,/16,/32}>Hop divisor
+slider3:-0.30<-1,1,0.01>Min correlation
+slider4:0.30<-1,1,0.01>Max correlation
+
+@init
+ext_noinit = 1;
+
+two_pi = 2*$pi;
+eps = 0.000000000001;
+
+// memory layout
+inL   = 0;
+inR   = 131072;
+outL  = 262144;
+outR  = 393216;
+olaN  = 524288;
+fftL  = 655360;
+fftR  = 786432;
+win   = 917504;
+
+fftsize = 0;
+hop = 0;
+hopdiv = 0;
+ringlen = 0;
+
+writepos = 0;
+hopcounter = 0;
+initialized = 0;
+
+function clear_buf(base, len)
+local(i)
+(
+  i = 0;
+  loop(len,
+    base[i] = 0;
+    i += 1;
+  );
+);
+
+function build_window(sz)
+local(i, w)
+(
+  i = 0;
+  loop(sz,
+    w = 0.5 - 0.5*cos(two_pi*i/sz); // Hann
+    win[i] = w;
+    i += 1;
+  );
+);
+
+function get_fftsize(sel)
+local(v)
+(
+  v = 1024;
+  sel == 1 ? v = 2048;
+  sel == 2 ? v = 4096;
+  sel == 3 ? v = 8192;
+  sel == 4 ? v = 16384;
+  sel == 5 ? v = 32768;
+  v;
+);
+
+function get_hopdiv(sel)
+local(v)
+(
+  v = 2;
+  sel == 1 ? v = 4;
+  sel == 2 ? v = 8;
+  sel == 3 ? v = 16;
+  sel == 4 ? v = 32;
+  v;
+);
+
+function setup()
+local(memlen)
+(
+  fftsize = get_fftsize(slider1|0);
+  hopdiv = get_hopdiv(slider2|0);
+
+  hop = (fftsize / hopdiv)|0;
+  hop < 1 ? hop = 1;
+
+  ringlen = fftsize * 2;
+  memlen = ringlen;
+
+  build_window(fftsize);
+
+  clear_buf(inL, memlen);
+  clear_buf(inR, memlen);
+  clear_buf(outL, memlen);
+  clear_buf(outR, memlen);
+  clear_buf(olaN, memlen);
+  clear_buf(fftL, fftsize * 2);
+  clear_buf(fftR, fftsize * 2);
+
+  writepos = 0;
+  hopcounter = 0;
+  initialized = 1;
+);
+
+function process_frame(frame_start)
+local(
+  i, idx, wv, norm,
+  lr, li, rr, ri,
+  magL, magR, den, c, tgt,
+  eLr, eLi,
+  par_r, par_i,
+  ort_r, ort_i, ort_mag,
+  new_par_mag, new_ort_mag,
+  new_rr, new_ri,
+  wsq
+)
+(
+  i = 0;
+  loop(fftsize,
+    idx = (frame_start + i) % ringlen;
+    wv = win[i];
+
+    fftL[i*2]     = inL[idx] * wv;
+    fftL[i*2 + 1] = 0;
+
+    fftR[i*2]     = inR[idx] * wv;
+    fftR[i*2 + 1] = 0;
+
+    i += 1;
+  );
+
+  fft(fftL, fftsize);
+  fft(fftR, fftsize);
+
+  i = 0;
+  loop(fftsize,
+    lr = fftL[i*2];
+    li = fftL[i*2 + 1];
+    rr = fftR[i*2];
+    ri = fftR[i*2 + 1];
+
+    magL = sqrt(lr*lr + li*li);
+    magR = sqrt(rr*rr + ri*ri);
+    den = magL * magR;
+
+    den > eps ? (
+      c = (lr*rr + li*ri) / den;
+      c > 1 ? c = 1;
+      c < -1 ? c = -1;
+
+      tgt = c;
+      c < slider3 ? tgt = slider3;
+      c > slider4 ? tgt = slider4;
+
+      abs(tgt - c) > eps ? (
+        eLr = lr / magL;
+        eLi = li / magL;
+
+        par_r = c * magR * eLr;
+        par_i = c * magR * eLi;
+
+        ort_r = rr - par_r;
+        ort_i = ri - par_i;
+        ort_mag = sqrt(ort_r*ort_r + ort_i*ort_i);
+
+        new_par_mag = tgt * magR;
+        new_ort_mag = sqrt(max(0, 1 - tgt*tgt)) * magR;
+
+        ort_mag > eps ? (
+          ort_r /= ort_mag;
+          ort_i /= ort_mag;
+        ) : (
+          ort_r = -eLi;
+          ort_i =  eLr;
+        );
+
+        new_rr = new_par_mag * eLr + new_ort_mag * ort_r;
+        new_ri = new_par_mag * eLi + new_ort_mag * ort_i;
+
+        fftR[i*2]     = new_rr;
+        fftR[i*2 + 1] = new_ri;
+      );
+    );
+
+    i += 1;
+  );
+
+  ifft(fftL, fftsize);
+  ifft(fftR, fftsize);
+
+  norm = 1 / fftsize;
+
+  i = 0;
+  loop(fftsize,
+    idx = (frame_start + i) % ringlen;
+    wv = win[i];
+    wsq = wv * wv;
+
+    outL[idx] += fftL[i*2] * wv * norm;
+    outR[idx] += fftR[i*2] * wv * norm;
+    olaN[idx] += wsq;
+
+    i += 1;
+  );
+);
+
+@slider
+slider4 < slider3 ? slider4 = slider3;
+
+new_fftsize = get_fftsize(slider1|0);
+new_hopdiv = get_hopdiv(slider2|0);
+new_hop = (new_fftsize / new_hopdiv)|0;
+new_hop < 1 ? new_hop = 1;
+
+initialized == 0 ? (
+  setup();
+) : (
+  (new_fftsize != fftsize) || (new_hop != hop) ? setup();
+);
+
+@block
+initialized == 0 ? setup();
+
+@sample
+initialized == 0 ? setup();
+
+// write input
+inL[writepos] = spl0;
+inR[writepos] = spl1;
+
+// fixed latency = fftsize
+outidx = writepos - fftsize;
+outidx < 0 ? outidx += ringlen;
+
+nrm = olaN[outidx];
+
+nrm > eps ? (
+  spl0 = outL[outidx] / nrm;
+  spl1 = outR[outidx] / nrm;
+) : (
+  spl0 = 0;
+  spl1 = 0;
+);
+
+outL[outidx] = 0;
+outR[outidx] = 0;
+olaN[outidx] = 0;
+
+// advance write pointer
+writepos += 1;
+writepos >= ringlen ? writepos = 0;
+
+// run frame every hop samples
+hopcounter += 1;
+hopcounter >= hop ? (
+  hopcounter = 0;
+
+  frame_start = writepos - fftsize;
+  frame_start < 0 ? frame_start += ringlen;
+
+  process_frame(frame_start);
+);

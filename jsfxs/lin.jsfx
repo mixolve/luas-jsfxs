@@ -1,0 +1,63 @@
+options:no_meter
+
+slider1:-100<-100,100,0.1>panL
+slider2:100<-100,100,0.1>panR
+slider3:0<0,3,1{-00.0,-03.0,-04.5,-06.0}>law
+slider4:0<-100,100,0.1>shear
+slider5:0<0,1,1{ToL,ToR}>mode
+slider6:0<-100,100,0.1>midBal
+slider7:0<-100,100,0.1>sideBal
+
+@slider
+panL_pos = slider1 * 0.01;
+panR_pos = slider2 * 0.01;
+panL_theta = (panL_pos + 1) * $pi * 0.25;
+panR_theta = (panR_pos + 1) * $pi * 0.25;
+k = slider4 * 0.01;
+midBal = slider6 * 0.01;
+sideBal = slider7 * 0.01;
+law = slider3 == 0 ? 1
+    : slider3 == 1 ? 0.7071067811865476
+    : slider3 == 2 ? 0.5946035575013605
+    : 0.5;
+
+gLL = cos(panL_theta);
+gLR = sin(panL_theta);
+gRL = cos(panR_theta);
+gRR = sin(panR_theta);
+
+abs(panL_pos) < 0.0000001 ? (
+  gLL *= law;
+  gLR *= law;
+);
+
+abs(panR_pos) < 0.0000001 ? (
+  gRL *= law;
+  gRR *= law;
+);
+
+@sample
+L = spl0;
+R = spl1;
+
+outL = L * gLL + R * gRL;
+outR = L * gLR + R * gRR;
+
+slider5 == 0 ? (
+  spl0 = outL + k * outR;
+  spl1 = outR;
+) : (
+  spl0 = outL;
+  spl1 = outR + k * outL;
+);
+
+M = (spl0 + spl1) * 0.7071067811865476;
+S = (spl0 - spl1) * 0.7071067811865476;
+
+midL = M * (midBal > 0 ? 1 - midBal : 1);
+midR = M * (midBal < 0 ? 1 + midBal : 1);
+sideL = S * (sideBal > 0 ? 1 - sideBal : 1);
+sideR = S * (sideBal < 0 ? 1 + sideBal : 1);
+
+spl0 = (midL + sideL) * 0.7071067811865476;
+spl1 = (midR - sideR) * 0.7071067811865476;

@@ -1,0 +1,68 @@
+options:no_meter
+slider1:0<0,360,0.1>degRotation
+slider2:0<0,1,1{Off,On}>flipR
+slider3:0<0,17,1{manual,---,0_[L/R]_original,45_[S/M],90_[-R/L],135_[-M/S],180_[-L/-R]-globalFlip,225_[-S/-M],270_[R/-L],315_[M/-S],---,0F_[L/-R]_flipR,45F_[M/S]_LRms,90F_[R/L]_swapLR,135F_[-S/M],180F_[-L/R],225F_[-M/-S],270F_[-R/-L],315F_[S/-M]}>preseT
+
+@init
+pi = $pi;
+deg2rad = pi / 180.0;
+
+last_preset = -1;
+
+@slider
+preset = slider3|0;
+
+preset != last_preset ? (
+
+  // base 8
+  preset == 2  ? (slider1=0;   slider2=0;);
+  preset == 3  ? (slider1=45;  slider2=0;);
+  preset == 4  ? (slider1=90;  slider2=0;);
+  preset == 5  ? (slider1=135; slider2=0;);
+  preset == 6  ? (slider1=180; slider2=0;);
+  preset == 7  ? (slider1=225; slider2=0;);
+  preset == 8  ? (slider1=270; slider2=0;);
+  preset == 9  ? (slider1=315; slider2=0;);
+
+  // flipR versions
+  preset == 11 ? (slider1=0;   slider2=1;);
+  preset == 12 ? (slider1=45;  slider2=1;);
+  preset == 13 ? (slider1=90;  slider2=1;);
+  preset == 14 ? (slider1=135; slider2=1;);
+  preset == 15 ? (slider1=180; slider2=1;);
+  preset == 16 ? (slider1=225; slider2=1;);
+  preset == 17 ? (slider1=270; slider2=1;);
+  preset == 18 ? (slider1=315; slider2=1;);
+
+  preset != 0 ? (
+    sliderchange(slider1);
+    sliderchange(slider2);
+  );
+);
+
+last_preset = preset;
+
+// matrix
+theta = slider1 * deg2rad;
+c = cos(theta);
+s = sin(theta);
+
+flipR = slider2 >= 0.5;
+
+m11 = c;
+m12 = -s;
+m21 = s;
+m22 = c;
+
+// flip R
+flipR ? (
+  m12 = -m12;
+  m22 = -m22;
+);
+
+@sample
+L = spl0;
+R = spl1;
+
+spl0 = m11 * L + m12 * R;
+spl1 = m21 * L + m22 * R;

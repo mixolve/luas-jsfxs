@@ -1,0 +1,381 @@
+options:no_meter
+
+slider1:0<-24,24,0.1>gnS
+slider2:0<-24,24,0.1>gnR
+slider3:0<-100,400,0.1>wide
+slider4:0<-24,24,0.1>*gnS
+slider5:0<-24,24,0.1>*gnR
+slider6:0<-100,400,0.1>*wide
+
+@init
+ms_norm = 0.70710678118655;
+db2amp = log(10) / 20;
+edit_active = 0;
+touch_active = 0;
+edit_value = 0;
+edit_sign = 1;
+edit_frac_div = 0;
+edit_has_sep = 0;
+mouse_last_left = 0;
+mouse_last_right = 0;
+
+function clamp(x, lo, hi)
+(
+  x < lo ? lo : x > hi ? hi : x;
+);
+
+function map_db(x)
+(
+  exp(clamp(x, -24, 24) * db2amp);
+);
+
+function map_wide(x)
+(
+  clamp(x, -100, 400) * 0.01 + 1;
+);
+
+function point_in_rect(mx,my,x,y,w,h)
+(
+  mx >= x && mx < x+w && my < y+h && my >= y;
+);
+
+function draw_back(x,y)
+(
+  gfx_set(1,1,1,1);
+  gfx_rect(x,y,120,20,1);
+);
+
+function draw_value(x,y,val)
+(
+  sprintf(#txt,"%+06.1f",val);
+  gfx_set(0,0,0,1);
+  gfx_x = x;
+  gfx_y = y;
+  gfx_drawstr(#txt);
+);
+
+function handle_scroll1(x,y,slider_idx,step,minv,maxv)
+(
+  point_in_rect(mouse_x, mouse_y, x, y, 120, 20) && mouse_wheel ? (
+    slider(slider_idx) += (mouse_wheel / 120) * step;
+    slider(slider_idx) = min(maxv, max(minv, slider(slider_idx)));
+    mouse_wheel = 0;
+    touch_active = slider_idx;
+    slider_automate(slider(slider_idx));
+    sliderchange(2^(slider_idx-1));
+  );
+);
+
+function handle_reset(x,y,slider_idx,defval)
+(
+  point_in_rect(mouse_x, mouse_y, x, y, 60, 20) && (mouse_cap & 2) && !mouse_last_right ? (
+    slider(slider_idx) = defval;
+    touch_active = slider_idx;
+    slider_automate(slider(slider_idx));
+    slider_automate(slider(slider_idx), 1);
+    sliderchange(2^(slider_idx-1));
+    edit_active == slider_idx ? edit_active = 0;
+  );
+);
+
+function input_number(x,y,slider_idx,minv,maxv)
+local(ch,digit,v,inside)
+(
+  inside = point_in_rect(mouse_x,mouse_y,x,y,60,20);
+
+  inside && (mouse_cap&1) && !mouse_last_left ? (
+    edit_active = slider_idx;
+    edit_value = 0;
+    edit_sign = 1;
+    edit_frac_div = 0;
+    edit_has_sep = 0;
+  );
+
+  edit_active == slider_idx ? (
+    ch = gfx_getchar();
+
+    ch >= 48 && ch <= 57 ? (
+      digit = ch - 48;
+
+      edit_frac_div > 0 ? (
+        edit_frac_div *= 10;
+        edit_value += digit / edit_frac_div;
+      ) : (
+        edit_value = edit_value * 10 + digit;
+      );
+    );
+
+    ch == 45 ? (
+      edit_sign = -edit_sign;
+    );
+
+    (ch == 46 || ch == 44 || ch == 1962935345 || ch == 1962935374) && edit_frac_div == 0 ? (
+      edit_frac_div = 1;
+      edit_has_sep = 1;
+    );
+
+    ch == 13 ? (
+      v = edit_value * edit_sign;
+      v = min(maxv, max(minv, v));
+      slider(slider_idx) = v;
+      touch_active = slider_idx;
+      slider_automate(slider(slider_idx));
+      slider_automate(slider(slider_idx), 1);
+      sliderchange(2^(slider_idx-1));
+      edit_active = 0;
+    );
+
+    !inside && (mouse_cap&1) && !mouse_last_left ? (
+      edit_active = 0;
+    );
+
+    edit_active == slider_idx ? (
+      gfx_set(1, 0.8, 0.6, 1);
+      gfx_rect(x,y,60,20,1);
+
+      gfx_set(0,0,0,1);
+      gfx_x = x;
+      gfx_y = y;
+
+      edit_has_sep && edit_frac_div == 1 ? (
+        sprintf(#txt,"%+06.1f.",edit_value * edit_sign);
+      ) : (
+        sprintf(#txt,"%+06.1f",edit_value * edit_sign);
+      );
+
+      gfx_drawstr(#txt);
+    );
+  );
+);
+
+@block
+splpos = 0;
+
+gnS = map_db(slider1);
+gnR = map_db(slider2);
+wide = map_wide(slider3);
+gnSe = map_db(slider4);
+gnRe = map_db(slider5);
+wideE = map_wide(slider6);
+
+gnS_chg = slider_next_chg(1, gnS_tgt_raw);
+gnR_chg = slider_next_chg(2, gnR_tgt_raw);
+wide_chg = slider_next_chg(3, wide_tgt_raw);
+gnSe_chg = slider_next_chg(4, gnSe_tgt_raw);
+gnRe_chg = slider_next_chg(5, gnRe_tgt_raw);
+wideE_chg = slider_next_chg(6, wideE_tgt_raw);
+
+gnS_chg > 0 ? (
+  gnS_tgt = map_db(gnS_tgt_raw);
+  gnS_step = (gnS_tgt - gnS) / gnS_chg;
+) : (
+  gnS_step = 0;
+);
+
+gnR_chg > 0 ? (
+  gnR_tgt = map_db(gnR_tgt_raw);
+  gnR_step = (gnR_tgt - gnR) / gnR_chg;
+) : (
+  gnR_step = 0;
+);
+
+wide_chg > 0 ? (
+  wide_tgt = map_wide(wide_tgt_raw);
+  wide_step = (wide_tgt - wide) / wide_chg;
+) : (
+  wide_step = 0;
+);
+
+gnSe_chg > 0 ? (
+  gnSe_tgt = map_db(gnSe_tgt_raw);
+  gnSe_step = (gnSe_tgt - gnSe) / gnSe_chg;
+) : (
+  gnSe_step = 0;
+);
+
+gnRe_chg > 0 ? (
+  gnRe_tgt = map_db(gnRe_tgt_raw);
+  gnRe_step = (gnRe_tgt - gnRe) / gnRe_chg;
+) : (
+  gnRe_step = 0;
+);
+
+wideE_chg > 0 ? (
+  wideE_tgt = map_wide(wideE_tgt_raw);
+  wideE_step = (wideE_tgt - wideE) / wideE_chg;
+) : (
+  wideE_step = 0;
+);
+
+@sample
+L = spl0 * gnS;
+R = spl1 * gnS * gnR;
+
+M = (L + R) * ms_norm;
+S = (L - R) * ms_norm;
+
+S *= wide;
+
+L = (M + S) * ms_norm;
+R = (M - S) * ms_norm;
+
+L *= gnSe;
+R *= gnSe * gnRe;
+
+M = (L + R) * ms_norm;
+S = (L - R) * ms_norm;
+
+S *= wideE;
+
+L = (M + S) * ms_norm;
+R = (M - S) * ms_norm;
+
+spl0 = L;
+spl1 = R;
+
+gnS_chg > 0 ? (
+  splpos < gnS_chg ? (
+    gnS += gnS_step;
+  ) : (
+    gnS = gnS_tgt;
+    gnS_chg = slider_next_chg(1, gnS_tgt_raw);
+    gnS_chg > 0 ? (
+      gnS_tgt = map_db(gnS_tgt_raw);
+      gnS_step = (gnS_tgt - gnS) / (gnS_chg - splpos);
+    ) : (
+      gnS_step = 0;
+    );
+  );
+);
+
+gnR_chg > 0 ? (
+  splpos < gnR_chg ? (
+    gnR += gnR_step;
+  ) : (
+    gnR = gnR_tgt;
+    gnR_chg = slider_next_chg(2, gnR_tgt_raw);
+    gnR_chg > 0 ? (
+      gnR_tgt = map_db(gnR_tgt_raw);
+      gnR_step = (gnR_tgt - gnR) / (gnR_chg - splpos);
+    ) : (
+      gnR_step = 0;
+    );
+  );
+);
+
+wide_chg > 0 ? (
+  splpos < wide_chg ? (
+    wide += wide_step;
+  ) : (
+    wide = wide_tgt;
+    wide_chg = slider_next_chg(3, wide_tgt_raw);
+    wide_chg > 0 ? (
+      wide_tgt = map_wide(wide_tgt_raw);
+      wide_step = (wide_tgt - wide) / (wide_chg - splpos);
+    ) : (
+      wide_step = 0;
+    );
+  );
+);
+
+gnSe_chg > 0 ? (
+  splpos < gnSe_chg ? (
+    gnSe += gnSe_step;
+  ) : (
+    gnSe = gnSe_tgt;
+    gnSe_chg = slider_next_chg(4, gnSe_tgt_raw);
+    gnSe_chg > 0 ? (
+      gnSe_tgt = map_db(gnSe_tgt_raw);
+      gnSe_step = (gnSe_tgt - gnSe) / (gnSe_chg - splpos);
+    ) : (
+      gnSe_step = 0;
+    );
+  );
+);
+
+gnRe_chg > 0 ? (
+  splpos < gnRe_chg ? (
+    gnRe += gnRe_step;
+  ) : (
+    gnRe = gnRe_tgt;
+    gnRe_chg = slider_next_chg(5, gnRe_tgt_raw);
+    gnRe_chg > 0 ? (
+      gnRe_tgt = map_db(gnRe_tgt_raw);
+      gnRe_step = (gnRe_tgt - gnRe) / (gnRe_chg - splpos);
+    ) : (
+      gnRe_step = 0;
+    );
+  );
+);
+
+wideE_chg > 0 ? (
+  splpos < wideE_chg ? (
+    wideE += wideE_step;
+  ) : (
+    wideE = wideE_tgt;
+    wideE_chg = slider_next_chg(6, wideE_tgt_raw);
+    wideE_chg > 0 ? (
+      wideE_tgt = map_wide(wideE_tgt_raw);
+      wideE_step = (wideE_tgt - wideE) / (wideE_chg - splpos);
+    ) : (
+      wideE_step = 0;
+    );
+  );
+);
+
+splpos += 1;
+
+@gfx 20 20
+gfx_clear = 0xff9999;
+gfx_setfont(1, "Sometype Mono", 16, 0);
+slider_show(1048575, 0);
+
+draw_back(10, 10);
+handle_scroll1(10,10,1,0.1,-24,24);
+gfx_x = 15; gfx_y = 10; gfx_set(0,0,0,1); gfx_drawstr("gnS''");
+handle_reset(10,10,1,0);
+draw_value(70,10,slider1);
+input_number(70,10,1,-24,24);
+
+draw_back(140, 10);
+handle_scroll1(140,10,2,0.1,-24,24);
+gfx_x = 145; gfx_y = 10; gfx_set(0,0,0,1); gfx_drawstr("gnR''");
+handle_reset(140,10,2,0);
+draw_value(200,10,slider2);
+input_number(200,10,2,-24,24);
+
+draw_back(270, 10);
+handle_scroll1(270,10,3,0.1,-100,400);
+gfx_x = 275; gfx_y = 10; gfx_set(0,0,0,1); gfx_drawstr("wide'");
+handle_reset(270,10,3,0);
+draw_value(330,10,slider3);
+input_number(330,10,3,-100,400);
+
+draw_back(10, 35);
+handle_scroll1(10,35,4,0.1,-24,24);
+gfx_x = 15; gfx_y = 35; gfx_set(0,0,0,1); gfx_drawstr("*gnS'");
+handle_reset(10,35,4,0);
+draw_value(70,35,slider4);
+input_number(70,35,4,-24,24);
+
+draw_back(140, 35);
+handle_scroll1(140,35,5,0.1,-24,24);
+gfx_x = 145; gfx_y = 35; gfx_set(0,0,0,1); gfx_drawstr("*gnR'");
+handle_reset(140,35,5,0);
+draw_value(200,35,slider5);
+input_number(200,35,5,-24,24);
+
+draw_back(270, 35);
+handle_scroll1(270,35,6,0.1,-100,400);
+gfx_x = 275; gfx_y = 35; gfx_set(0,0,0,1); gfx_drawstr("*wide");
+handle_reset(270,35,6,0);
+draw_value(330,35,slider6);
+input_number(330,35,6,-100,400);
+
+touch_active && !(mouse_cap & 1) && mouse_last_left ? (
+  slider_automate(slider(touch_active), 1);
+  touch_active = 0;
+);
+
+mouse_last_left = mouse_cap & 1;
+mouse_last_right = mouse_cap & 2;

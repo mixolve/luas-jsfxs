@@ -1,0 +1,269 @@
+
+options:no_meter
+
+slider1:0<0,1,1>s1
+slider2:0<0,1,1>s2
+slider3:0<0,1,1>s3
+slider4:0<0,1,1>s4
+slider5:0<0,1,1>s5
+slider6:0<0,1,1>s6
+
+@init
+f1 = 134;
+f2 = 523;
+f3 = 2093;
+f4 = 5000;
+f5 = 10000;
+
+qA = 0.541196100146197;
+qB = 1.306562964876377;
+
+function clampf(f) (
+  min(0.499*srate, max(10, f));
+);
+
+mem = 0;
+
+lpcoef = mem; mem += 5*20;
+hpcoef = mem; mem += 5*20;
+
+main_lpL = mem; mem += 5*8;
+main_lpR = mem; mem += 5*8;
+main_hpL = mem; mem += 5*8;
+main_hpR = mem; mem += 5*8;
+
+comp_lpL = mem; mem += 10*8;
+comp_lpR = mem; mem += 10*8;
+comp_hpL = mem; mem += 10*8;
+comp_hpR = mem; mem += 10*8;
+
+function set_biquad_lp(c, freq, q)
+local(w0,cs,sn,alpha,a0,a1,a2,b0,b1,b2) (
+  freq = clampf(freq);
+  w0 = 2*$pi*freq/srate;
+  cs = cos(w0);
+  sn = sin(w0);
+  alpha = sn/(2*q);
+
+  b0 = (1-cs)*0.5;
+  b1 = 1-cs;
+  b2 = (1-cs)*0.5;
+  a0 = 1+alpha;
+  a1 = -2*cs;
+  a2 = 1-alpha;
+
+  c[0] = b0/a0;
+  c[1] = b1/a0;
+  c[2] = b2/a0;
+  c[3] = a1/a0;
+  c[4] = a2/a0;
+);
+
+function set_biquad_hp(c, freq, q)
+local(w0,cs,sn,alpha,a0,a1,a2,b0,b1,b2) (
+  freq = clampf(freq);
+  w0 = 2*$pi*freq/srate;
+  cs = cos(w0);
+  sn = sin(w0);
+  alpha = sn/(2*q);
+
+  b0 = (1+cs)*0.5;
+  b1 = -(1+cs);
+  b2 = (1+cs)*0.5;
+  a0 = 1+alpha;
+  a1 = -2*cs;
+  a2 = 1-alpha;
+
+  c[0] = b0/a0;
+  c[1] = b1/a0;
+  c[2] = b2/a0;
+  c[3] = a1/a0;
+  c[4] = a2/a0;
+);
+
+function set_split(split, freq)
+local(lp, hp) (
+  lp = lpcoef + (split-1)*20;
+  hp = hpcoef + (split-1)*20;
+
+  set_biquad_lp(lp +  0, freq, qA);
+  set_biquad_lp(lp +  5, freq, qB);
+  set_biquad_lp(lp + 10, freq, qA);
+  set_biquad_lp(lp + 15, freq, qB);
+
+  set_biquad_hp(hp +  0, freq, qA);
+  set_biquad_hp(hp +  5, freq, qB);
+  set_biquad_hp(hp + 10, freq, qA);
+  set_biquad_hp(hp + 15, freq, qB);
+);
+
+function biquadN4(x, c, s)
+local(i, ci, si, y, t) (
+  y = x;
+  i = 0;
+  loop(4,
+    ci = c + i*5;
+    si = s + i*2;
+
+    t     = ci[0]*y + si[0];
+    si[0] = ci[1]*y - ci[3]*t + si[1];
+    si[1] = ci[2]*y - ci[4]*t;
+
+    y = t;
+    i += 1;
+  );
+  y;
+);
+
+function lp_main_L(x, split) local(c, s) (
+  c = lpcoef + (split-1)*20;
+  s = main_lpL + (split-1)*8;
+  biquadN4(x, c, s);
+);
+
+function lp_main_R(x, split) local(c, s) (
+  c = lpcoef + (split-1)*20;
+  s = main_lpR + (split-1)*8;
+  biquadN4(x, c, s);
+);
+
+function hp_main_L(x, split) local(c, s) (
+  c = hpcoef + (split-1)*20;
+  s = main_hpL + (split-1)*8;
+  biquadN4(x, c, s);
+);
+
+function hp_main_R(x, split) local(c, s) (
+  c = hpcoef + (split-1)*20;
+  s = main_hpR + (split-1)*8;
+  biquadN4(x, c, s);
+);
+
+function comp_idx(split, band) (
+  ((split-2)*(split-1))/2 + (band-1);
+);
+
+function ap_comp_L(x, split, band)
+local(idx, clp, chp, slp, shp) (
+  idx = comp_idx(split, band);
+
+  clp = lpcoef + (split-1)*20;
+  chp = hpcoef + (split-1)*20;
+
+  slp = comp_lpL + idx*8;
+  shp = comp_hpL + idx*8;
+
+  biquadN4(x, clp, slp) + biquadN4(x, chp, shp);
+);
+
+function ap_comp_R(x, split, band)
+local(idx, clp, chp, slp, shp) (
+  idx = comp_idx(split, band);
+
+  clp = lpcoef + (split-1)*20;
+  chp = hpcoef + (split-1)*20;
+
+  slp = comp_lpR + idx*8;
+  shp = comp_hpR + idx*8;
+
+  biquadN4(x, clp, slp) + biquadN4(x, chp, shp);
+);
+
+set_split(1, f1);
+set_split(2, f2);
+set_split(3, f3);
+set_split(4, f4);
+set_split(5, f5);
+
+@slider
+set_split(1, f1);
+set_split(2, f2);
+set_split(3, f3);
+set_split(4, f4);
+set_split(5, f5);
+
+@sample
+s1 = slider1 >= 0.5;
+s2 = slider2 >= 0.5;
+s3 = slider3 >= 0.5;
+s4 = slider4 >= 0.5;
+s5 = slider5 >= 0.5;
+s6 = slider6 >= 0.5;
+
+inL = spl0;
+inR = spl1;
+
+cnt = s1 + s2 + s3 + s4 + s5 + s6;
+
+cnt == 0 ? (
+  spl0 = inL;
+  spl1 = inR;
+) : (
+  outL = 0;
+  outR = 0;
+
+  b1rawL = lp_main_L(inL, 1);
+  b1rawR = lp_main_R(inR, 1);
+  r1L    = hp_main_L(inL, 1);
+  r1R    = hp_main_R(inR, 1);
+
+  b2rawL = lp_main_L(r1L, 2);
+  b2rawR = lp_main_R(r1R, 2);
+  r2L    = hp_main_L(r1L, 2);
+  r2R    = hp_main_R(r1R, 2);
+
+  b3rawL = lp_main_L(r2L, 3);
+  b3rawR = lp_main_R(r2R, 3);
+  r3L    = hp_main_L(r2L, 3);
+  r3R    = hp_main_R(r2R, 3);
+
+  b4rawL = lp_main_L(r3L, 4);
+  b4rawR = lp_main_R(r3R, 4);
+  r4L    = hp_main_L(r3L, 4);
+  r4R    = hp_main_R(r3R, 4);
+
+  b5L = lp_main_L(r4L, 5);
+  b5R = lp_main_R(r4R, 5);
+  b6L = hp_main_L(r4L, 5);
+  b6R = hp_main_R(r4R, 5);
+
+  c1L = ap_comp_L(b1rawL, 2, 1);
+  c1R = ap_comp_R(b1rawR, 2, 1);
+
+  c1L = ap_comp_L(c1L, 3, 1);
+  c1R = ap_comp_R(c1R, 3, 1);
+
+  c1L = ap_comp_L(c1L, 4, 1);
+  c1R = ap_comp_R(c1R, 4, 1);
+
+  b1L = ap_comp_L(c1L, 5, 1);
+  b1R = ap_comp_R(c1R, 5, 1);
+
+  c2L = ap_comp_L(b2rawL, 3, 2);
+  c2R = ap_comp_R(b2rawR, 3, 2);
+
+  c2L = ap_comp_L(c2L, 4, 2);
+  c2R = ap_comp_R(c2R, 4, 2);
+
+  b2L = ap_comp_L(c2L, 5, 2);
+  b2R = ap_comp_R(c2R, 5, 2);
+
+  c3L = ap_comp_L(b3rawL, 4, 3);
+  c3R = ap_comp_R(b3rawR, 4, 3);
+
+  b3L = ap_comp_L(c3L, 5, 3);
+  b3R = ap_comp_R(c3R, 5, 3);
+
+  b4L = ap_comp_L(b4rawL, 5, 4);
+  b4R = ap_comp_R(b4rawR, 5, 4);
+
+  s1 ? ( outL += b1L; outR += b1R; );
+  s2 ? ( outL += b2L; outR += b2R; );
+  s3 ? ( outL += b3L; outR += b3R; );
+  s4 ? ( outL += b4L; outR += b4R; );
+  s5 ? ( outL += b5L; outR += b5R; );
+  s6 ? ( outL += b6L; outR += b6R; );
+
+  spl0 = outL;
+  spl1 = outR;
+);

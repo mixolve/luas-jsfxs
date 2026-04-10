@@ -1,0 +1,98 @@
+options:no_meter
+
+slider1:0<0,1,1>L
+slider2:0<0,1,1>R
+slider3:0<0,1,1>M
+slider4:0<0,1,1>S
+slider5:0<0,1,1>inpl
+
+@init
+ms_norm = 0.70710678118655;
+
+function set_listen_mode(mode)
+(
+  slider1 = 0;
+  slider2 = 0;
+  slider3 = 0;
+  slider4 = 0;
+
+  mode == 1 ? slider1 = 1;
+  mode == 2 ? slider2 = 1;
+  mode == 3 ? slider3 = 1;
+  mode == 4 ? slider4 = 1;
+);
+
+@slider
+slider1 = slider1 >= 0.5 ? 1 : 0;
+slider2 = slider2 >= 0.5 ? 1 : 0;
+slider3 = slider3 >= 0.5 ? 1 : 0;
+slider4 = slider4 >= 0.5 ? 1 : 0;
+slider5 = slider5 >= 0.5 ? 1 : 0;
+
+@block
+mode_count = slider1 + slider2 + slider3 + slider4;
+
+mode_count > 1 ? (
+  slider4 ? set_listen_mode(4)
+  : slider3 ? set_listen_mode(3)
+  : slider2 ? set_listen_mode(2)
+  : slider1 ? set_listen_mode(1);
+);
+
+listen_mode = -1;
+slider1 ? listen_mode = 0;
+slider2 ? listen_mode = 1;
+slider3 ? listen_mode = 2;
+slider4 ? listen_mode = 3;
+
+@sample
+inL = spl0;
+inR = spl1;
+
+listenL = inL;
+listenR = inR;
+listenM = (inL + inR) * ms_norm;
+listenS = (inL - inR) * ms_norm;
+
+outL = inL;
+outR = inR;
+
+listen_mode == 0 ? (
+  slider5 ? (
+    outL = listenL;
+    outR = 0;
+  ) : (
+    outL = listenL;
+    outR = listenL;
+  );
+);
+
+listen_mode == 1 ? (
+  slider5 ? (
+    outL = 0;
+    outR = listenR;
+  ) : (
+    outL = listenR;
+    outR = listenR;
+  );
+);
+
+listen_mode == 2 ? (
+  outL = listenM;
+  outR = listenM;
+);
+
+listen_mode == 3 ? (
+  slider5 ? (
+    outL = listenS;
+    outR = -listenS;
+  ) : (
+    outL = listenS;
+    outR = listenS;
+  );
+);
+
+spl0 = outL;
+spl1 = outR;
+
+

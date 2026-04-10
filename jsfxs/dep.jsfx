@@ -1,0 +1,155 @@
+options:no_meter
+
+slider1:0<-99,99,0.01>dsTeReo
+slider2:0<-99,99,0.01>dRighT
+slider3:0<0,5,1{+00.0,+10.0,+20.0,+40.0,+80.0,+99.0}>buffer
+slider4:0<-180,180,0.1>phaseL
+slider5:0<-180,180,0.1>phaseR
+
+@init
+pi = $pi;
+deg2rad = pi / 180;
+
+bufL_base = 0;
+bufR_base = 262144;
+buf_size = 0;
+buf_mask = 0;
+buf_pos = 0;
+lookahead_ms = 0;
+lookahead_spl = 0;
+max_delay_spl = 0;
+dlyL_spl = 0;
+dlyR_spl = 0;
+params_dirty = 1;
+
+phase_taps = 129;
+phase_mid = (phase_taps - 1) / 2;
+phase_bufsize = 256;
+phase_bufmask = phase_bufsize - 1;
+phase_bufL = 524288;
+phase_bufR = 524544;
+phase_coef = 524800;
+phase_pos = 0;
+
+i = 0;
+loop(phase_taps,
+  k = i - phase_mid;
+  ak = abs(k);
+  c = 0;
+  ak > 0 ? (
+    (ak & 1) ? (
+      c = 2 / (pi * k);
+    );
+  );
+  w = 0.42 - 0.5 * cos(2 * pi * i / (phase_taps - 1)) + 0.08 * cos(4 * pi * i / (phase_taps - 1));
+  mem[phase_coef + i] = c * w;
+  i += 1;
+);
+
+function clamp(x, lo, hi)
+(
+  x < lo ? lo : x > hi ? hi : x;
+);
+
+function ms_to_samples(ms)
+(
+  floor(ms * srate / 1000 + 0.5);
+);
+
+function clear_buf(base, len)
+local(i)
+(
+  i = 0;
+  loop(len,
+    base[i] = 0;
+    i += 1;
+  );
+);
+
+@slider
+params_dirty = 1;
+phiL = slider4 * deg2rad;
+phiR = slider5 * deg2rad;
+cL = cos(phiL);
+sL = sin(phiL);
+cR = cos(phiR);
+sR = sin(phiR);
+
+@block
+params_dirty ? (
+  lookahead_ms =
+    slider3 < 0.5 ? 0 :
+    slider3 < 1.5 ? 10 :
+    slider3 < 2.5 ? 20 :
+    slider3 < 3.5 ? 40 :
+    slider3 < 4.5 ? 80 :
+    99;
+
+  lookahead_spl = ms_to_samples(lookahead_ms);
+
+  lookahead_spl == 0 ? (
+    dlyL_spl = 0;
+    dlyR_spl = 0;
+  ) : (
+    max_delay_spl = lookahead_spl * 2;
+    need_size = max_delay_spl + 2;
+    pow2 = 1;
+    loop(30,
+      pow2 < need_size ? pow2 *= 2;
+    );
+    new_buf_size = pow2;
+    new_buf_mask = new_buf_size - 1;
+    new_buf_size != buf_size ? (
+      buf_size = new_buf_size;
+      buf_mask = new_buf_mask;
+      clear_buf(bufL_base, buf_size);
+      clear_buf(bufR_base, buf_size);
+      buf_pos = 0;
+    );
+    sD_spl = ms_to_samples(slider1);
+    rD_spl = ms_to_samples(slider2);
+    dlyL_spl = clamp(lookahead_spl + sD_spl, 0, max_delay_spl);
+    dlyR_spl = clamp(lookahead_spl + sD_spl + rD_spl, 0, max_delay_spl);
+  );
+
+  pdc_delay = lookahead_spl + phase_mid;
+  pdc_bot_ch = 0;
+  pdc_top_ch = 2;
+  params_dirty = 0;
+);
+
+@sample
+L = spl0;
+R = spl1;
+
+lookahead_spl > 0 ? (
+  bufL_base[buf_pos] = L;
+  bufR_base[buf_pos] = R;
+  readL = (buf_pos - dlyL_spl) & buf_mask;
+  readR = (buf_pos - dlyR_spl) & buf_mask;
+  L = bufL_base[readL];
+  R = bufR_base[readR];
+  buf_pos = (buf_pos + 1) & buf_mask;
+);
+
+mem[phase_bufL + phase_pos] = L;
+mem[phase_bufR + phase_pos] = R;
+
+dL = mem[phase_bufL + ((phase_pos - phase_mid) & phase_bufmask)];
+dR = mem[phase_bufR + ((phase_pos - phase_mid) & phase_bufmask)];
+
+hL = 0;
+hR = 0;
+i = 0;
+loop(phase_taps,
+  idx = (phase_pos - i) & phase_bufmask;
+  h = mem[phase_coef + i];
+  hL += h * mem[phase_bufL + idx];
+  hR += h * mem[phase_bufR + idx];
+  i += 1;
+);
+
+spl0 = dL * cL + hL * sL;
+spl1 = dR * cR + hR * sR;
+
+phase_pos = (phase_pos + 1) & phase_bufmask;
